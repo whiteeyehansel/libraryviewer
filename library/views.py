@@ -1,7 +1,7 @@
 from django.shortcuts import render, get_object_or_404
 from .models import FolderEntry, AppSetting
 from django.http import JsonResponse, FileResponse, Http404
-from django.core.paginator import Paginator
+from django.core.paginator import Paginator, EmptyPage
 from django.conf import settings
 from django.contrib import messages
 from django.apps import apps
@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image
 from urllib.parse import unquote
 from django.urls import reverse
+from django.http import HttpResponse
 
 import json
 import os
@@ -20,17 +21,32 @@ def index(request):
     page  = request.GET.get('page', 1)
     qs    = FolderEntry.objects.filter(name__icontains=q) if q else FolderEntry.objects.all()
     pager = Paginator(qs, 20)
-    objs  = pager.get_page(page)
-
+    try:
+      objs = pager.page(page)          # strict - will raise EmptyPage  
+    except EmptyPage:
+        # AJAX call asking for a page that doesn’t exist → return nothing
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return HttpResponse("")      # ← already imported earlier
+        # Direct (non-AJAX) access: show the last real page instead of 404
+        objs = pager.page(pager.num_pages)
     # AJAX request (infinite scroll)
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        response = render(request, 'library/partials/_entries.html', {
+        if not objs.object_list:
+            return HttpResponse("")  # nothing to render at all
+
+        if not objs.has_next():
+            # Final page – render entries but indicate it’s the last
+            response = render(request, 'library/partials/_entries.html', {
+                'entries': objs,
+                'MEDIA_URL': settings.MEDIA_URL
+            })
+            response['X-Last-Page'] = '1'
+            return response
+
+        return render(request, 'library/partials/_entries.html', {
             'entries': objs,
             'MEDIA_URL': settings.MEDIA_URL
-        })
-        if not objs.has_next():
-            response['X-Last-Page'] = '1'
-        return response
+        })   
 
     # Normal full-page load
     return render(request, 'library/index.html', {

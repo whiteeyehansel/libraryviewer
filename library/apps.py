@@ -1,162 +1,172 @@
-from django.apps import AppConfig
 import os
+import re
 import shutil
 import unicodedata
-import re
-from django.conf import settings
 from datetime import datetime
-from dotenv import load_dotenv
+from pathlib import Path
+
+from django.apps        import AppConfig, apps
+from django.conf        import settings
+from django.core.management import call_command
+from django.db          import connections
+from django.db.utils    import OperationalError
 from django.utils.timezone import make_aware
+from dotenv             import load_dotenv
 
 
 class LibraryConfig(AppConfig):
-    name = 'library'
+    """ Registers the “library” Django app and kicks off a one-time folder sync. """
+    name = "library"
 
+    # ────────────────────────────────────────────────
+    # Django calls this once the registry is built
+    # ────────────────────────────────────────────────
     def ready(self):
-        if os.environ.get('RUN_MAIN') != 'true':
+        # ▸ When runserver’s autoreloader forks a child it sets RUN_MAIN=’true’.
+        if os.environ.get("RUN_MAIN") != "true":
             return
 
-        from django.db import connections
-        from django.db.utils import OperationalError
-        from django.core.management import call_command
-        from django.apps import apps
-        from dotenv import load_dotenv
-        
-        # 1. Check DB is up
+        # 1️⃣  Make sure the DB is actually up.
         try:
-            db_conn = connections['default']
-            db_conn.ensure_connection()
+            connections["default"].ensure_connection()
         except OperationalError:
-            print("[Sync] Database not ready yet. Skipping sync.")
+            print("[Library] DB not ready — skipping sync.")
             return
 
-        # 2. Auto-run migrations
+        # 2️⃣  Run migrations silently (handy in dev / fresh clones).
         try:
-            call_command('makemigrations', 'library', interactive=False, verbosity=0)
-            call_command('migrate', interactive=False, verbosity=0)
-        except Exception as e:
-            print(f"[Sync] Migration error: {e}")
+            call_command("makemigrations", "library", interactive=False, verbosity=0)
+            call_command("migrate",        interactive=False, verbosity=0)
+        except Exception as exc:
+            print(f"[Library] Migration error: {exc}")
             return
 
-        # 3. Load env for fallback
+        # 3️⃣  Load .env for VERSION & default root path.
         load_dotenv()
-        from django.apps import apps
-        AppSetting = apps.get_model('library', 'AppSetting')
+        settings.APP_VERSION = os.getenv("APP_VERSION", "dev")
 
-        default_dir = os.getenv('DEFAULT_ROOT_DIR', r'C:\Fallback\Downloads')
-        setting, created = AppSetting.objects.get_or_create(key='ROOT_DIR', defaults={'value': default_dir})
-        if created:
-            print(f"[Sync] ROOT_DIR initialized from .env: {default_dir}")
+        # 4️⃣  Grab our models *after* the registry is ready.
+        ModelType    = apps.get_model("library", "ModelType")
+        AppSetting   = apps.get_model("library", "AppSetting")
+        FolderEntry  = apps.get_model("library", "FolderEntry")
 
-        # 4. Run sync
+        # 5️⃣  Ensure we have a ROOT_DIR setting.
+        default_root = os.getenv("DEFAULT_ROOT_DIR", r"C:\Fallback\Downloads")
+        AppSetting.objects.get_or_create(key="ROOT_DIR", defaults={"value": default_root})
+
+        # 6️⃣  Ensure the “glTF” type exists (others can be added later).
+        gltf_type, _ = ModelType.objects.get_or_create(code="gltf", defaults={"name": "glTF"})
+
+        # 7️⃣  Do the folder synchronisation.
         try:
-            self.sync_folders()
-        except Exception as e:
-            print(f"[Sync] Failed to run folder sync: {e}")
+            self.sync_folders(
+                root_dir   = Path(AppSetting.objects.get(key="ROOT_DIR").value).expanduser(),
+                entry_cls  = FolderEntry,
+                type_gltf  = gltf_type
+            )
+        except Exception as exc:
+            print(f"[Library] Folder sync failed: {exc}")
 
-    
-
-    def sync_folders(self):
-        from django.apps import apps
-        FolderEntry = apps.get_model('library', 'FolderEntry')
-        AppSetting = apps.get_model('library', 'AppSetting')
-
-        root_dir = AppSetting.objects.get(key='ROOT_DIR').value.strip()
-        if not root_dir or not os.path.exists(root_dir):
-            print(f"[Sync] Invalid or missing ROOT_DIR: {root_dir}")
+    # ────────────────────────────────────────────────
+    # Sync helper
+    # ────────────────────────────────────────────────
+    def sync_folders(self, *, root_dir: Path, entry_cls, type_gltf):
+        """Scans `root_dir`, (re-)creates FolderEntry rows and copies thumbnails."""
+        if not root_dir.exists():
+            print(f"[Library] ROOT_DIR {root_dir} missing — aborting sync.")
             return
 
-        media_thumb_dir = os.path.join(settings.MEDIA_ROOT, 'thumbs')
-        os.makedirs(media_thumb_dir, exist_ok=True)
+        thumb_dir = Path(settings.MEDIA_ROOT) / "thumbs"
+        thumb_dir.mkdir(parents=True, exist_ok=True)
 
-        existing_entries = {e.name: e for e in FolderEntry.objects.all()}
-        seen_names = set()
-        renamed_map = {}
+        # Snapshot of existing DB rows keyed by folder-name
+        existing = {e.name: e for e in entry_cls.objects.all()}
+        seen     = set()
 
-        print(f"[Sync] Scanning root folder: {root_dir}")
+        print(f"[Library] Scanning {root_dir} …")
 
-        for folder in os.listdir(root_dir):
-            folder_path = os.path.join(root_dir, folder)
-            if not os.path.isdir(folder_path):
-                continue
+        for folder in sorted(p for p in root_dir.iterdir() if p.is_dir()):
+            name = folder.name
+            jpeg = folder / f"{name}.jpeg"
+            gltf = folder / f"{name}.gltf"
+            urlf = folder / f"{name}.url"
 
-            jpeg = os.path.join(folder_path, folder + '.jpeg')
-            gltf = os.path.join(folder_path, folder + '.gltf')
-            lnk = os.path.join(folder_path, folder + '.url')
-            obtained_on = None
+            if not jpeg.exists():
+                continue                                    # must have thumbnail
 
-            if os.path.exists(gltf):
-                obtained_on = make_aware(datetime.fromtimestamp(os.path.getmtime(gltf)))
+            # Copy thumbnail if newer / missing
+            safe_name   = self.slugify(name)
+            dest_thumb  = thumb_dir / f"{safe_name}.jpeg"
+            if self.needs_copy(dest_thumb, jpeg):
+                shutil.copyfile(jpeg, dest_thumb)
+                print(f"  • thumbnail updated: {name}")
 
-            if not os.path.exists(jpeg):
-                print(f"[Sync] Skipping {folder} — no JPEG found")
-                continue
+            # Prepare/lookup DB row
+            entry   = existing.get(name)
+            mtime   = make_aware(datetime.fromtimestamp(gltf.stat().st_mtime)) if gltf.exists() else None
+            url_val = self.parse_url(urlf)
 
-            safe_name = self.slugify_filename(folder)
-            dest_jpeg = os.path.join(media_thumb_dir, safe_name + '.jpeg')
-            jpeg_db_path = f'thumbs/{safe_name}.jpeg'
-
-            if self.file_changed(dest_jpeg, jpeg):
-                shutil.copyfile(jpeg, dest_jpeg)
-                print(f"[Sync] Copied thumbnail for: {folder}")
-
-            seen_names.add(folder)
-            entry = existing_entries.get(folder)
-
-            if not entry:
-                FolderEntry.objects.create(
-                    name=folder,
-                    path=folder_path,
-                    jpeg_path=jpeg_db_path,
-                    gltf_path=gltf if os.path.exists(gltf) else None,
-                    lnk_path=self.parse_url(lnk) if os.path.exists(lnk) else None,
-                    obtained_on=obtained_on,
+            if entry is None:
+                entry_cls.objects.create(
+                    name        = name,
+                    path        = str(folder),
+                    jpeg_path   = f"thumbs/{safe_name}.jpeg",
+                    gltf_path   = str(gltf) if gltf.exists() else None,
+                    lnk_path    = url_val,
+                    obtained_on = mtime,
+                    type        = type_gltf,   # default type
                 )
-                print(f"[Sync] Added new folder: {folder}")
+                print(f"  + added: {name}")
             else:
-                updated = False
-                if entry.jpeg_path != jpeg_db_path:
-                    entry.jpeg_path = jpeg_db_path
-                    updated = True
-                if os.path.exists(gltf) and entry.gltf_path != gltf:
-                    entry.gltf_path = gltf
-                    updated = True
-                if os.path.exists(lnk):
-                    new_url = self.parse_url(lnk)
-                    if entry.lnk_path != new_url:
-                        entry.lnk_path = new_url
-                        updated = True
-                if obtained_on and entry.obtained_on != obtained_on:
-                    entry.obtained_on = obtained_on
-                    updated = True
-                if updated:
+                changed = False
+                if entry.jpeg_path != f"thumbs/{safe_name}.jpeg":
+                    entry.jpeg_path = f"thumbs/{safe_name}.jpeg"; changed = True
+                if gltf.exists() and entry.gltf_path != str(gltf):
+                    entry.gltf_path = str(gltf);           changed = True
+                if entry.lnk_path != url_val:
+                    entry.lnk_path = url_val;              changed = True
+                if mtime and entry.obtained_on != mtime:
+                    entry.obtained_on = mtime;             changed = True
+                if entry.type_id is None:
+                    entry.type = type_gltf;                changed = True
+                if changed:
                     entry.save()
-                    print(f"[Sync] Updated: {folder}")
+                    print(f"  • updated: {name}")
 
-        for name, entry in existing_entries.items():
-            if name not in seen_names and name not in renamed_map:
-                entry.delete()
-                print(f"[Sync] Removed orphan: {name}")
+            seen.add(name)
 
-        print("[Sync] Folder sync complete.")
+        # Purge orphans
+        for lost_name in set(existing) - seen:
+            existing[lost_name].delete()
+            print(f"  – removed orphan: {lost_name}")
 
-    def slugify_filename(self, name):
-        name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
-        name = re.sub(r'[^\w\-. ]', '', name)
-        return name.replace(' ', '_')
+        print("[Library] Folder sync complete.")
 
-    def file_changed(self, old_path, new_path):
+    # ────────────────────────────────────────────────
+    # Helpers
+    # ────────────────────────────────────────────────
+    @staticmethod
+    def slugify(text: str) -> str:
+        text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+        text = re.sub(r"[^\w\-. ]+", "", text).strip().replace(" ", "_")
+        return text.lower()
+
+    @staticmethod
+    def needs_copy(dest: Path, src: Path) -> bool:
         try:
-            return not os.path.exists(old_path) or os.path.getmtime(old_path) != os.path.getmtime(new_path)
-        except:
+            return not dest.exists() or dest.stat().st_mtime != src.stat().st_mtime
+        except OSError:
             return True
 
-    def parse_url(self, filepath):
+    @staticmethod
+    def parse_url(url_file: Path) -> str | None:
+        if not url_file.exists():
+            return None
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.startswith('URL='):
-                        return line.split('=', 1)[1].strip()
+            with url_file.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.lower().startswith("url="):
+                        return line.strip().split("=", 1)[1]
         except Exception:
             pass
         return None
