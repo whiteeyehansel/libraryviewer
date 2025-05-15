@@ -1,4 +1,4 @@
-📝 LibraryViewer
+📝 ### LibraryViewer
 
 LibraryViewer is a Django-powered web app for browsing local 3D asset folders.It supports .gltf model preview via <model-viewer>, texture tooltips, metadata extraction, and live disk-based syncing — no file copies needed.
 
