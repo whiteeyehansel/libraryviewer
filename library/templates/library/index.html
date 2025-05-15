@@ -19,7 +19,9 @@
 
 <!-- 🔧 Header -->
 <nav class="navbar navbar-dark bg-dark px-3">
-    <span class="navbar-brand mb-0 h1">📂 GLTF Library Viewer</span>
+    <a href="{% url 'index' %}" class="navbar-brand mb-0 h1 text-white text-decoration-none" style="cursor: pointer;">
+        📂 GLTF Library Viewer
+    </a>
     <a href="{% url 'settings' %}" class="text-light">
         <i class="bi bi-gear-fill fs-4"></i>
     </a>
@@ -40,6 +42,14 @@
         </div>
     </form>
 
+    <div class="text-center text-muted mb-4">
+        {% if query %}
+            Found <strong>{{ total_count }}</strong> results.
+        {% else %}
+            We have <strong>{{ total_count }}</strong> models.
+        {% endif %}
+    </div>
+
     <!-- 📁 Responsive Grid -->
     <div id="entries" class="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 g-4">
         {% include 'library/partials/_entries.html' with entries=entries %}
@@ -52,18 +62,53 @@
     </div>
 </div>
 
+<button id="goUpBtn" class="btn btn-primary shadow"
+        style="position: fixed; bottom: 30px; right: 30px; display: none; z-index: 1000;">
+    ↑ GO UP
+</button>
+
+<script>
+const goUpBtn = document.getElementById('goUpBtn');
+
+window.addEventListener('scroll', () => {
+    goUpBtn.style.display = window.scrollY > 300 ? 'block' : 'none';
+});
+
+goUpBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+</script>
+
 <!-- Infinite scroll -->
 <script>
-let page = 2, loading = false;
+let page = 2;
+let loading = false;
+let doneScrolling = false;
+
 window.addEventListener('scroll', () => {
-    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500 && !loading) {
+    if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500 && !loading && !doneScrolling) {
         loading = true;
         $('#loading').show();
-        $.get(`?page=${page}&q={{ query }}`, data => {
-            $('#entries').append(data);
-            $('#loading').hide();
-            loading = false;
-            page++;
+
+        $.ajax({
+            url: `?page=${page}&q={{ query }}`,
+            success: function(data, status, xhr) {
+                const temp = document.createElement('div');
+                temp.innerHTML = data;
+                const newCards = temp.querySelectorAll('.col-6, .col-md-4, .col-lg-3');
+
+                if (newCards.length) {
+                    newCards.forEach(card => document.getElementById('entries').appendChild(card));
+                    page++;
+                }
+
+                if (xhr.getResponseHeader("X-Last-Page") === "1") {
+                    doneScrolling = true;
+                }
+
+                loading = false;
+                $('#loading').hide();
+            }
         });
     }
 });
