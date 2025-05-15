@@ -1,5 +1,5 @@
 from django.db import models
-
+from django.utils.text import slugify
 
 class ModelType(models.Model):
     """
@@ -11,10 +11,17 @@ class ModelType(models.Model):
     code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
 
+    slug = models.SlugField(blank=True, unique=True)
+
     class Meta:
         verbose_name = "Model Type"
         verbose_name_plural = "Model Types"
         ordering = ["code"]
+    
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:              # pragma: no cover
         return self.name
@@ -31,12 +38,18 @@ class ModelCategory(models.Model):
         on_delete=models.CASCADE,
         related_name="categories",
     )
+    slug = models.SlugField(blank=True, unique=True)
 
     class Meta:
         verbose_name = "Category"
         verbose_name_plural = "Categories"
         unique_together = ("name", "type")
         ordering = ["type__code", "name"]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:              # pragma: no cover
         return f"{self.name} ({self.type.code})"
@@ -49,8 +62,15 @@ class Tag(models.Model):
     """
     name = models.CharField(max_length=50, unique=True)
 
+    slug = models.SlugField(blank=True, unique=True)
+
     class Meta:
         ordering = ["name"]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:              # pragma: no cover
         return self.name

@@ -9,6 +9,11 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     {% block head %}{% endblock %}
 </head>
+<style>
+  .btn-check + .btn {
+    margin-bottom: 0.5rem;
+  }
+</style>
 <body class="bg-light">
 
 <!-- 🔧 Navbar -->
@@ -21,12 +26,106 @@
     </a>
 </nav>
 
-<!-- 🔻 Page Content -->
-<div class="container-fluid px-4">
-    {% block content %}{% endblock %}
+
+<!-- SIDEBAR -->
+<div class="container-fluid px-0">
+  <div class="row g-0">
+   <!-- TYPES -->
+      <aside class="col-md-3 col-lg-2 d-none d-md-block bg-light border-end">
+  <form id="filterForm" method="get">
+
+    <div class="p-3">
+
+      <!-- Search -->
+      <div class="mb-3">
+        <div class="input-group">
+          <input type="text" name="q" value="{{ query }}" class="form-control form-control-sm" placeholder="Search...">
+        </div>
+      </div>
+
+      <!-- Types -->
+      <div class="mb-3">
+        <h6 class="text-uppercase text-muted fw-bold small">Model Types</h6>
+        <div class="btn-group-vertical w-100" role="group">
+          {% for type in types %}
+            <input type="checkbox" class="btn-check" name="type" value="{{ type.slug }}"
+                   id="type-{{ type.id }}" autocomplete="off"
+                   {% if type.slug in selected_type_slugs %}checked{% endif %}>
+            <label class="btn btn-outline-primary text-start" for="type-{{ type.id }}">{{ type.name }}</label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Categories -->
+      <div class="mb-3">
+        <h6 class="text-uppercase text-muted fw-bold small">Categories</h6>
+        <div class="btn-group-vertical w-100" role="group">
+          {% for category in categories %}
+            <input type="checkbox" class="btn-check" name="category" value="{{ category.slug }}"
+                   id="cat-{{ category.id }}" autocomplete="off"
+                   {% if category.slug in selected_cat_slugs %}checked{% endif %}>
+            <label class="btn btn-outline-success text-start" for="cat-{{ category.id }}">{{ category.name }}</label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Tags -->
+      <div class="mb-3">
+        <h6 class="text-uppercase text-muted fw-bold small">Tags</h6>
+        <div class="d-flex flex-wrap gap-1">
+          {% for tag in tags %}
+            <input type="checkbox" class="btn-check" name="tag" value="{{ tag.slug }}"
+                   id="tag-{{ tag.id }}" autocomplete="off"
+                   {% if tag.slug in selected_tag_slugs %}checked{% endif %}>
+            <label for="tag-{{ tag.id }}" class="badge bg-secondary rounded-pill text-decoration-none"
+                   style="cursor: pointer;" onclick="submitForm()">{{ tag.name }}</label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <hr>
+      <div class="text-center mt-3">
+        <button type="submit" class="btn btn-primary btn-sm">Apply Filters</button>
+        <a href="/" class="btn btn-outline-secondary btn-sm">Clear All</a>
+      </div>
+
+    </div>
+
+</form>
+  </aside>
+    <!-- 🔻 Main Page Content -->
+    <main class="col-md-9 col-lg-10 px-4">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 </div>
 <footer class="text-center text-muted py-3 mt-5 border-top small">
     Built with vibe-coding ⚡ @ 2025 — v{{ VERSION }}
 </footer>
 </body>
+<script>
+document.querySelectorAll('#filterForm input[type=checkbox]').forEach(input => {
+  input.addEventListener('change', () => {
+    document.getElementById('filterForm').submit();
+  });
+});
+</script>
+<script>
+function submitAllForms() {
+  const allForms = ['searchForm', 'typeForm', 'categoryForm', 'tagForm'];
+  const params = new URLSearchParams();
+  allForms.forEach(id => {
+    const form = document.getElementById(id);
+    if (form) {
+      const formData = new FormData(form);
+      for (const [key, value] of formData.entries()) {
+        params.append(key, value);
+      }
+    }
+  });
+  window.location = `?${params.toString()}`;
+}
+</script>
+
 </html>
