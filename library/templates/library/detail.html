@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ entry.name }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+
+    <style>
+        #texPreview {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            border: 1px solid #ccc;
+            background: #fff;
+            padding: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        #texPreview img {
+            max-width: 200px;
+            max-height: 200px;
+        }
+    </style>
+</head>
+<body class="container py-4">
+
+<div class="mb-4">
+    <a href="/" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Back to list</a>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        {% if image_exists %}
+        <a href="#" data-bs-toggle="modal" data-bs-target="#modelModal">
+            <img src="{{ MEDIA_URL }}{{ entry.jpeg_path }}" class="img-fluid border shadow w-100 rounded">
+        </a>
+        {% else %}
+            <div class="alert alert-warning">Thumbnail not found.</div>
+        {% endif %}
+    </div>
+    <div class="col-md-6">
+        <h2>{{ entry.name }}</h2>
+
+        <p><strong>📁 Folder Path:</strong><br>{{ entry.path }}</p>
+
+        <p><strong>🧱 GLTF File:</strong><br>{{ entry.gltf_path }}</p>
+
+        <p><strong>🔗 LNK File:</strong><br>
+            {% if entry.lnk_path %}
+                <a href="{{ entry.lnk_path }}" target="_blank">{{ entry.lnk_path }}</a>
+            {% else %}
+                <span class="text-muted">None</span>
+            {% endif %}
+        </p>
+
+        {% if entry.obtained_on %}
+            <p>
+                <strong>📅 Date Obtained:</strong><br>
+                {{ entry.obtained_on|date:"l, F j, Y – H:i:s" }}
+            </p>
+        {% endif %}
+
+        <button onclick="openFolder()" class="btn btn-primary mt-3">
+            <i class="bi bi-folder2-open"></i> Open in Explorer
+        </button>
+    </div>
+</div>
+
+{% if gltf_info %}
+<hr class="my-5">
+<h4><i class="bi bi-filetype-glb me-2"></i>GLTF File Analysis</h4>
+
+<div class="row row-cols-1 row-cols-md-3 g-3 mb-4">
+    <div class="col"><strong>File Size:</strong><br>{{ gltf_info.file_size }} MB</div>
+    <div class="col"><strong>Mesh Count:</strong><br>{{ gltf_info.mesh_count }}</div>
+    <div class="col"><strong>Estimated Vertices:</strong><br>{{ gltf_info.vertex_count }}</div>
+    <div class="col"><strong>Estimated Triangles:</strong><br>{{ gltf_info.triangle_count }}</div>
+    <div class="col"><strong>Texture Count:</strong><br>{{ gltf_info.texture_count }}</div>
+</div>
+
+{% if gltf_info.textures %}
+    <h5 class="mt-4 mb-3">Textures</h5>
+    <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Size (MB)</th>
+                    <th>Dimensions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tex in gltf_info.textures %}
+                <tr>
+                    <td data-preview="{{ tex.preview }}" class="hover-preview">{{ tex.name }}</td>
+                    <td>{{ tex.type }}</td>
+                    <td>{{ tex.size }}</td>
+                    <td>{{ tex.dimensions }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endif %}
+
+<div id="texPreview"></div>
+
+<!-- Model Viewer Modal -->
+<div class="modal fade" id="modelModal" tabindex="-1" aria-labelledby="modelModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{{ entry.name }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <model-viewer
+          src="{{ base_url }}{{ gltf_rel_path }}"
+          base-url="{{ base_url }}"
+          auto-rotate
+          camera-controls
+          style="width:100%;height:600px;"
+          shadow-intensity="1"
+          exposure="1"
+          ar
+        ></model-viewer>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    function openFolder() {
+        fetch("{% url 'open_folder' entry.id %}")
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'ok') alert('Failed: ' + data.message);
+            });
+    }
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const box = document.getElementById('texPreview');
+  document.querySelectorAll('.hover-preview').forEach(el => {
+    const src = el.dataset.preview;
+    if (!src) return;
+
+    el.addEventListener('mouseenter', () => {
+      box.innerHTML = `<img src="${src}" alt="tex">`;
+      box.style.display = 'block';
+    });
+    el.addEventListener('mousemove', e => {
+      box.style.top  = (e.clientY + 20) + 'px';
+      box.style.left = (e.clientX + 20) + 'px';
+    });
+    el.addEventListener('mouseleave', () => {
+      box.style.display = 'none';
+    });
+  });
+});
+</script>
+
+</body>
+</html>
