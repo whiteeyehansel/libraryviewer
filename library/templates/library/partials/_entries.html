@@ -1,0 +1,18 @@
+{% for entry in entries %}
+<div class="col-6 col-md-4 col-lg-3">
+    <div class="card h-100 shadow-sm">
+        <a href="{% url 'detail' entry.id %}" class="text-decoration-none">
+            <img src="{{ MEDIA_URL }}{{ entry.jpeg_path }}" class="card-img-top img-fluid" alt="{{ entry.name }}">
+            <div class="card-body text-center">
+                <h6 class="card-title text-truncate mb-1" title="{{ entry.name }}">{{ entry.name }}</h6>
+                {% if entry.obtained_on %}
+                    <div class="text-muted small">
+                        <i class="bi bi-clock-history me-1"></i>
+                        {{ entry.obtained_on|date:"M j, Y – H:i" }}
+                    </div>
+                {% endif %}
+            </div>
+        </a>
+    </div>
+</div>
+{% endfor %}

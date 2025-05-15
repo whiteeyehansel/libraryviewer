@@ -1,0 +1,32 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.log
+
+# Virtual env
+.venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS crap
+.DS_Store
+Thumbs.db
+
+# Django static/media
+/media/
+staticfiles/
+
+# Git
+*.swp
+
+# Env variables
+.env
+
+# Migrations
+migrations/
+
