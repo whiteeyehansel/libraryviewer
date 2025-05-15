@@ -33,7 +33,7 @@ LibraryViewer is a Django-powered web app for browsing local 3D asset folders.It
 
     Clone the repo:
 
-    git clone https://github.com/youruser/libraryviewer.git
+    git clone https://github.com/whiteeyehansel/libraryviewer.git
     cd libraryviewer
 
     Setup a virtualenv:

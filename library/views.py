@@ -16,18 +16,30 @@ import os
 
 
 def index(request):
-    q = request.GET.get('q', '')
-    page = request.GET.get('page', 1)
-    qs = FolderEntry.objects.filter(name__icontains=q) if q else FolderEntry.objects.all()
-    paginator = Paginator(qs, 20)
-    page_obj = paginator.get_page(page)
+    q     = request.GET.get('q', '')
+    page  = request.GET.get('page', 1)
+    qs    = FolderEntry.objects.filter(name__icontains=q) if q else FolderEntry.objects.all()
+    pager = Paginator(qs, 20)
+    objs  = pager.get_page(page)
 
+    # AJAX request (infinite scroll)
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        return render(request, 'library/partials/_entries.html',
-                      {'entries': page_obj, 'MEDIA_URL': settings.MEDIA_URL})
+        response = render(request, 'library/partials/_entries.html', {
+            'entries': objs,
+            'MEDIA_URL': settings.MEDIA_URL
+        })
+        if not objs.has_next():
+            response['X-Last-Page'] = '1'
+        return response
 
-    return render(request, 'library/index.html',
-                  {'entries': page_obj, 'query': q, 'MEDIA_URL': settings.MEDIA_URL})
+    # Normal full-page load
+    return render(request, 'library/index.html', {
+        'entries': objs,
+        'query': q,
+        'MEDIA_URL': settings.MEDIA_URL,
+        'is_last_page': not objs.has_next(),
+        'total_count': qs.count(),
+    })
 
 def serve_entry_file_direct(request, entry_id, file):
     entry = get_object_or_404(FolderEntry, id=entry_id)
