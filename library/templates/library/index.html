@@ -3,34 +3,28 @@
 {% block title %}Library Index{% endblock %}
 
 {% block content %}
-<form method="get" class="mb-4">
-    <div class="input-group">
-        <input type="text" name="q" value="{{ query }}" class="form-control" placeholder="Search folders...">
-        <button type="submit" class="btn btn-primary">Search</button>
+
+    <div id="entries" class="row g-4">
+        {% include 'library/partials/_entries.html' with entries=entries %}
     </div>
-</form>
 
-<div class="text-center text-muted mb-4">
-    {% if query %}
-        Found <strong>{{ total_count }}</strong> results.
-    {% else %}
-        We have <strong>{{ total_count }}</strong> models.
-    {% endif %}
-</div>
+    <div id="loading" class="text-center py-4" style="display: none;">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="mt-2 text-muted">Loading more…</p>
+    </div>
 
-<div id="entries" class="row g-4">
-    {% include 'library/partials/_entries.html' with entries=entries %}
-</div>
-
-<div id="loading" class="text-center py-4" style="display: none;">
-    <div class="spinner-border text-primary" role="status"></div>
-    <p class="mt-2 text-muted">Loading more…</p>
-</div>
-
-<button id="goUpBtn" class="btn btn-primary shadow"
-        style="position: fixed; bottom: 30px; right: 30px; display: none; z-index: 1000;">
-    ↑ GO UP
-</button>
+    <button id="goUpBtn" class="btn btn-primary shadow"
+            style="position: fixed; bottom: 30px; right: 30px; display: none; z-index: 1000;">
+        ↑ GO UP
+    </button>
+<script>
+/* ------ submit sidebar without losing other params (page etc.) ---------- */
+document.getElementById('filterForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  const params = new URLSearchParams(new FormData(e.target));
+  window.location = `?${params.toString()}`;   // full reload resets scroll/infinite
+});
+</script>
 
 <script>
 let page = 2;

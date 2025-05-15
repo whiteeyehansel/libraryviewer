@@ -17,3 +17,7 @@ form { margin-bottom: 20px; }
     object-fit: cover;
     border: 1px solid #ccc;
 }
+/* keep sidebar visible under header */
+@media (min-width: 992px){
+  body { padding-left: 240px; }             /* push page content */
+}

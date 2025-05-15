@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404
-from .models import FolderEntry, AppSetting
+from .models import FolderEntry, AppSetting, ModelType, ModelCategory, Tag
 from django.http import JsonResponse, FileResponse, Http404
 from django.core.paginator import Paginator, EmptyPage
 from django.conf import settings
@@ -10,12 +10,81 @@ from PIL import Image
 from urllib.parse import unquote
 from django.urls import reverse
 from django.http import HttpResponse
+# ✂ imports stay as-is
+from django.db.models import Prefetch, Q
 
 import json
 import os
 
+def index(request):
+    q    = request.GET.get("q", "").strip()
+    page = int(request.GET.get("page", 1))
 
+    # Sanitize inputs
+    type_slugs = request.GET.getlist("type")
+    cat_slugs  = request.GET.getlist("category")
+    tag_slugs  = request.GET.getlist("tag")
+    tags_param = request.GET.get("tags", "")
 
+    qs = FolderEntry.objects.select_related("type", "category").prefetch_related("tags")
+
+    if q:
+        qs = qs.filter(name__icontains=q)
+
+    if type_slugs:
+        qs = qs.filter(type__slug__in=type_slugs)
+
+    if cat_slugs:
+        qs = qs.filter(category__slug__in=cat_slugs)
+
+    if tag_slugs:
+        qs = qs.filter(tags__slug__in=tag_slugs)
+
+    if tags_param:
+        tag_names = [t.strip() for t in tags_param.split(",") if t.strip()]
+        for tag in tag_names:
+            qs = qs.filter(tags__name__iexact=tag)
+
+    qs = qs.distinct().order_by("name")
+    total_count = qs.count()
+
+    selected_type_slugs = type_slugs
+    selected_cat_slugs  = cat_slugs
+    selected_tag_slugs  = tag_slugs
+
+    # ------- pagination ------------------------------------------------------
+    pager = Paginator(qs, 20)
+    objs  = pager.get_page(page)
+
+    # ------- AJAX for infinite scroll ---------------------------------------
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        html = render(request, "library/partials/_entries.html",
+                      {"entries": objs, "MEDIA_URL": settings.MEDIA_URL})
+        if not objs.has_next():
+            html["X-Last-Page"] = "1"
+        return html
+
+    # ------- sidebar data ----------------------------------------------------
+    all_types      = ModelType.objects.all()
+    all_categories = ModelCategory.objects.filter(type__in=all_types)
+
+    context = {
+    "entries": objs,
+    "query": q,
+    "total_count": total_count,
+    "MEDIA_URL": settings.MEDIA_URL,
+
+    "all_types": ModelType.objects.all(),
+    "all_categories": ModelCategory.objects.all(),
+    "all_tags": Tag.objects.all(),
+
+    "selected_type_slugs": type_slugs,
+    "selected_cat_slugs": cat_slugs,
+    "selected_tag_slugs": tag_slugs,
+    }
+    return render(request, "library/index.html", context)
+'''
+# Old index() function
 def index(request):
     q     = request.GET.get('q', '')
     page  = request.GET.get('page', 1)
@@ -56,6 +125,7 @@ def index(request):
         'is_last_page': not objs.has_next(),
         'total_count': qs.count(),
     })
+'''
 
 def serve_entry_file_direct(request, entry_id, file):
     entry = get_object_or_404(FolderEntry, id=entry_id)
